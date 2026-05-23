@@ -108,7 +108,9 @@ _HEATMAP_COLORS = [
     [165, 0, 38],
 ]
 
-st.set_page_config(page_title="Momentum", page_icon="🏃", layout="wide")
+LOGO_PATH = os.path.join(os.path.dirname(__file__), "assets", "logo.png")
+
+st.set_page_config(page_title="Momentum", page_icon=LOGO_PATH, layout="wide")
 
 # ── CSS ───────────────────────────────────────────────────────────────────────
 st.markdown("""
@@ -441,9 +443,6 @@ def get_data():
 st.cache_data.clear()
 garmin_client.fetch_garmin_activities(force=True)
 df, weekly, weekly_segments = get_data()
-
-# ── Hero ──────────────────────────────────────────────────────────────────────
-st.title("🏃 Momentum")
 
 if df.empty:
     st.error("No running activities found. Check the JSON files in the activities folder.")
