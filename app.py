@@ -21,7 +21,9 @@ from segment_stats import get_weekly_segment_bests
 from data_loader import (
     load_running_activities,
     get_weekly_summary,
-    get_zone_labels,
+    resolve_max_hr,
+    get_hr_zone_ranges,
+    build_hr_zone_totals_df,
     _format_pace,
     _format_duration,
     load_overrides,
@@ -1128,48 +1130,76 @@ with tab3:
 # TAB 4 — ZONE HR
 # ─────────────────────────────────────────────────────────────────────────────
 with tab4:
-    zone_labels = get_zone_labels()
-    zone_cols = [f"hr_zone_{i}" for i in range(7)]
-    zone_names = [zone_labels[c] for c in zone_cols]
-
-    # Totale per zona (ore)
-    zone_totals = {zone_labels[c]: df[c].sum() / 60 for c in zone_cols if c in df.columns}
-
-    df_zones = pd.DataFrame(list(zone_totals.items()), columns=["Zone", "Hours"])
-    df_zones = df_zones[df_zones["Hours"] > 0]
-
     ZONE_COLORS = ["#64748b", "#3b82f6", "#10b981", "#eab308", "#f97316", "#ef4444", "#a855f7"]
+
+    hr_zone_cfg = {}
+    try:
+        hr_zone_cfg = dict(st.secrets.get("hr_zones", {}))
+    except Exception:
+        pass
+    max_hr = resolve_max_hr(df, hr_zone_cfg.get("max_hr"))
+    custom_upper = hr_zone_cfg.get("upper_bpm")
+    if isinstance(custom_upper, (list, tuple)) and len(custom_upper) >= 7:
+        custom_upper = [int(x) for x in custom_upper[:7]]
+    else:
+        custom_upper = None
+
+    zone_meta = get_hr_zone_ranges(max_hr, custom_upper_bpm=custom_upper)
+    zone_cols = [z["col"] for z in zone_meta]
+    zone_names = [z["display_label"] for z in zone_meta]
+
+    st.caption(
+        f"Zone intervals (bpm) based on max HR **{max_hr} bpm**."
+    )
+
+    df_zones = build_hr_zone_totals_df(df)
+    df_zones["Zone"] = zone_names
+    df_zones_plot = df_zones[df_zones["Hours"] > 0].sort_values("zone_index").copy()
 
     c1, c2 = st.columns(2)
     with c1:
-        fig_pie = go.Figure(go.Pie(
-            labels=df_zones["Zone"],
-            values=df_zones["Hours"],
-            hole=0.6,
-            marker=dict(colors=ZONE_COLORS[:len(df_zones)], line=dict(color="#080a13", width=2)),
-            textinfo="percent",
-            textfont=dict(color="#f8fafc", size=11, family="Inter, sans-serif"),
-            hovertemplate="<b>%{label}</b><br>%{value:.2f} h (%{percent})<extra></extra>",
-        ))
-        fig_pie.update_layout(
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(family="Inter, sans-serif", color="#94a3b8"),
-            title=dict(text="⏱️ Total HR zone distribution", font=dict(family="Outfit, sans-serif", color="#f8fafc", size=15), x=0, y=0.95),
-            showlegend=True,
-            legend=dict(
-                bgcolor="rgba(0,0,0,0)",
-                font=dict(color="#94a3b8", size=9, family="Inter, sans-serif"),
-                orientation="h",
-                yanchor="bottom",
-                y=-0.1,
-                xanchor="center",
-                x=0.5
-            ),
-            height=400,
-            margin=dict(l=0, r=0, t=55, b=40),
-        )
-        st.plotly_chart(fig_pie, use_container_width=True)
+        if df_zones_plot.empty:
+            st.info("No HR zone data available.")
+        else:
+            fig_pie = go.Figure(go.Pie(
+                labels=df_zones_plot["Zone"],
+                values=df_zones_plot["Hours"],
+                hole=0.6,
+                sort=False,
+                direction="clockwise",
+                rotation=90,
+                marker=dict(
+                    colors=[ZONE_COLORS[int(i)] for i in df_zones_plot["zone_index"]],
+                    line=dict(color="#080a13", width=2),
+                ),
+                textinfo="percent",
+                textfont=dict(color="#f8fafc", size=11, family="Inter, sans-serif"),
+                hovertemplate="<b>%{label}</b><br>%{value:.2f} h (%{percent})<extra></extra>",
+            ))
+            fig_pie.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(family="Inter, sans-serif", color="#94a3b8"),
+                title=dict(
+                    text="⏱️ Total HR zone distribution",
+                    font=dict(family="Outfit, sans-serif", color="#f8fafc", size=15),
+                    x=0,
+                    y=0.95,
+                ),
+                showlegend=True,
+                legend=dict(
+                    bgcolor="rgba(0,0,0,0)",
+                    font=dict(color="#94a3b8", size=9, family="Inter, sans-serif"),
+                    orientation="v",
+                    yanchor="middle",
+                    y=0.5,
+                    xanchor="left",
+                    x=1.02,
+                ),
+                height=400,
+                margin=dict(l=0, r=0, t=55, b=40),
+            )
+            st.plotly_chart(fig_pie, use_container_width=True)
 
     with c2:
         # Stacked bar per corsa

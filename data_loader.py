@@ -558,3 +558,60 @@ def get_zone_labels() -> dict:
         "hr_zone_5": "Z5 – VO2max",
         "hr_zone_6": "Z6 – Anaerobico",
     }
+
+
+# Limiti superiori (% FCmax), stile predefinito Garmin Connect — 7 zone
+_HR_ZONE_PCT_MAX = [0.52, 0.60, 0.70, 0.80, 0.90, 0.95, 1.00]
+
+
+def resolve_max_hr(df: pd.DataFrame, override: Optional[int] = None) -> int:
+    if override is not None:
+        return int(override)
+    if not df.empty and "max_hr" in df.columns and df["max_hr"].notna().any():
+        return int(df["max_hr"].max())
+    return 192
+
+
+def get_hr_zone_ranges(
+    max_hr: int,
+    custom_upper_bpm: Optional[list[int]] = None,
+) -> list[dict]:
+    """Intervalli BPM per zona 0-6 (in ordine)."""
+    labels = get_zone_labels()
+    if custom_upper_bpm and len(custom_upper_bpm) >= 7:
+        uppers = [int(v) for v in custom_upper_bpm[:7]]
+    else:
+        uppers = [min(max_hr, int(round(max_hr * pct))) for pct in _HR_ZONE_PCT_MAX]
+
+    zones = []
+    lo_bpm = 0
+    for i in range(7):
+        hi_bpm = min(max_hr, uppers[i])
+        if i == 0:
+            range_str = f"< {hi_bpm + 1} bpm" if hi_bpm < max_hr else f"≤ {max_hr} bpm"
+        elif i == 6 or hi_bpm >= max_hr:
+            range_str = f"≥ {lo_bpm} bpm"
+            hi_bpm = max_hr
+        else:
+            range_str = f"{lo_bpm}–{hi_bpm} bpm"
+        zones.append(
+            {
+                "zone_index": i,
+                "col": f"hr_zone_{i}",
+                "short_label": labels[f"hr_zone_{i}"],
+                "range_str": range_str,
+                "display_label": f"{labels[f'hr_zone_{i}']} ({range_str})",
+            }
+        )
+        lo_bpm = hi_bpm + 1
+    return zones
+
+
+def build_hr_zone_totals_df(df: pd.DataFrame) -> pd.DataFrame:
+    """Ore per zona in ordine Z0→Z6 (anche zone a zero)."""
+    rows = []
+    for i in range(7):
+        col = f"hr_zone_{i}"
+        hours = float(df[col].sum() / 60) if col in df.columns else 0.0
+        rows.append({"zone_index": i, "Hours": hours})
+    return pd.DataFrame(rows)
