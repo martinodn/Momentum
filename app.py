@@ -10,6 +10,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pydeck as pdk
 
+import hmac
 import math
 import os
 import json
@@ -429,6 +430,64 @@ div[data-testid="stFileUploader"]:hover {
 </style>
 """, unsafe_allow_html=True)
 
+
+def _auth_password() -> str:
+    """Legge la password da secrets (Cloud o locale)."""
+    candidates = []
+    try:
+        candidates.append(st.secrets["auth"]["password"])
+    except Exception:
+        pass
+    try:
+        candidates.append(st.secrets.auth.password)
+    except Exception:
+        pass
+    try:
+        auth = st.secrets.get("auth", {})
+        if auth:
+            candidates.append(auth.get("password"))
+    except Exception:
+        pass
+    env = os.environ.get("APP_PASSWORD", "")
+    if env:
+        candidates.append(env)
+    for val in candidates:
+        if val is not None and str(val).strip():
+            return str(val).strip()
+    return ""
+
+
+def _passwords_match(entered: str, expected: str) -> bool:
+    a = entered.strip().encode("utf-8")
+    b = expected.strip().encode("utf-8")
+    return hmac.compare_digest(a, b)
+
+
+def _require_auth() -> None:
+    if st.session_state.get("authenticated"):
+        return
+    expected = _auth_password()
+    if not expected:
+        st.error(
+            "Access password not configured. In Streamlit Cloud → Settings → Secrets, add:\n\n"
+            "```toml\n[auth]\npassword = \"your-password\"\n```"
+        )
+        st.stop()
+
+    st.markdown("### 🔒 Access")
+    with st.form("auth_form", clear_on_submit=False):
+        entered = st.text_input("Password", type="password")
+        submitted = st.form_submit_button("Enter", type="primary")
+    if submitted:
+        if _passwords_match(entered, expected):
+            st.session_state["authenticated"] = True
+            st.rerun()
+        else:
+            st.error("Wrong password.")
+    st.stop()
+
+
+_require_auth()
 
 # ── Load data ─────────────────────────────────────────────────────────────────
 @st.cache_data
