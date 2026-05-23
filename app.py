@@ -682,6 +682,7 @@ with tab1:
     # Cadenza + Falcata
     c5, c6 = st.columns(2)
     df_cad = df.dropna(subset=["avg_cadence"])
+    df_cad = df_cad[df_cad["distance_km"] >= 3.0]
     if not df_cad.empty:
         with c5:
             fig5 = go.Figure()
@@ -703,6 +704,7 @@ with tab1:
             st.plotly_chart(fig5, use_container_width=True)
 
     df_str = df.dropna(subset=["avg_stride_length"])
+    df_str = df_str[df_str["distance_km"] >= 3.0]
     if not df_str.empty:
         with c6:
             fig6 = go.Figure()
