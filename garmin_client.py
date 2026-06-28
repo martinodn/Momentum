@@ -7,7 +7,7 @@ from typing import List, Dict
 import streamlit as st
 from garminconnect import Garmin
 
-from data_loader import ACTIVITY_FILES, ACTIVITIES_DIR, UPLOADS_DIR, TRACKING_START, POLYLINES_DIR
+from data_loader import ACTIVITY_FILES, ACTIVITIES_DIR, UPLOADS_DIR, TRACKING_START, POLYLINES_DIR, RUNNING_TYPES
 from segment_stats import SPLITS_DIR
 
 # Path where cache timestamp is stored
@@ -201,12 +201,24 @@ def fetch_garmin_activities(force: bool = False) -> List[Dict]:
     else:
         raw_activities = []
 
-    # Filter to running only
+    # DEBUG: log all raw activity types coming from Garmin before filtering
+    from collections import Counter
+    raw_type_counts = Counter()
+    for a in raw_activities:
+        act_type = a.get("activityType", {})
+        type_key = act_type.get("typeKey", str(act_type)) if isinstance(act_type, dict) else str(act_type)
+        start_str = a.get("startTimeLocal", "")[:10]
+        name = a.get("activityName", "")
+        raw_type_counts[type_key] += 1
+        print(f"[Garmin RAW] {start_str} | typeKey={type_key!r} | name={name!r}")
+    print(f"[Garmin RAW] Riepilogo tipi: {dict(raw_type_counts)}")
+
+    # Filter to running-type activities only (running, track_running, treadmill, trail...)
     def _is_running(act):
         act_type = act.get("activityType")
         if isinstance(act_type, dict):
             act_type = act_type.get("typeKey", "")
-        return act_type == "running"
+        return str(act_type) in RUNNING_TYPES
 
     running = [a for a in raw_activities if _is_running(a)]
 

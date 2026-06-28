@@ -6,7 +6,7 @@ Filtra solo le corse da marzo 2026 in poi.
 import json
 import os
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List, Dict
 import pandas as pd
 
 # Path relativo ai file JSON di Garmin
@@ -36,6 +36,18 @@ ACTIVITY_FILES = [
 
 # Inizio del periodo di tracciamento (rientro dall'infortunio)
 TRACKING_START = datetime(2026, 3, 1)
+
+# Tipi di attività Garmin considerati "corsa" (JSON export)
+RUNNING_TYPES = {
+    "running",         # corsa su strada
+    "track_running",   # corsa su pista
+    "treadmill_running",  # tapis roulant
+    "trail_running",   # trail
+    "indoor_running",  # corsa indoor generica
+}
+
+# Sport nei file .fit considerati "corsa"
+RUNNING_SPORTS = {"running", "generic"}  # Garmin usa "running" + sub_sport per pista
 
 # File di override manuale
 OVERRIDES_FILE = os.path.join(os.path.dirname(__file__), "overrides.json")
@@ -140,7 +152,7 @@ def _format_duration(minutes: Optional[float]) -> str:
     return f"{m}m"
 
 
-def load_all_activities() -> list[dict]:
+def load_all_activities() -> List[Dict]:
     """Carica tutte le attività dai file JSON di Garmin e dalla cartella uploads."""
     all_activities = []
     
@@ -180,9 +192,14 @@ def _parse_fit_file(file_path: str) -> Optional[dict]:
         session = sessions[0]
         data = session.get_values()
         
-        # Controlla se lo sport è running
+        # Controlla se lo sport è running (include pista, treadmill, trail)
         sport = data.get("sport")
-        if sport != "running":
+        sub_sport = data.get("sub_sport", "")
+        is_running = (
+            sport in RUNNING_SPORTS
+            or str(sub_sport) in {"track", "treadmill", "trail", "indoor_running"}
+        )
+        if not is_running:
             return None
             
         start_time_utc = data.get("start_time")
@@ -313,9 +330,10 @@ def load_running_activities() -> pd.DataFrame:
     excluded_ids = set(overrides["excluded_activity_ids"])
 
     # Filtra solo corse dal periodo di rientro, escludendo quelle eliminate
+    # Include: running, track_running, treadmill_running, trail_running, indoor_running
     runs = [
         a for a in all_activities
-        if a.get("activityType") == "running"
+        if a.get("activityType") in RUNNING_TYPES
         and a.get("startTimeLocal", 0) >= start_ms
         and int(a.get("activityId", 0)) not in excluded_ids
     ]
@@ -574,8 +592,8 @@ def resolve_max_hr(df: pd.DataFrame, override: Optional[int] = None) -> int:
 
 def get_hr_zone_ranges(
     max_hr: int,
-    custom_upper_bpm: Optional[list[int]] = None,
-) -> list[dict]:
+    custom_upper_bpm: Optional[List[int]] = None,
+) -> List[Dict]:
     """Intervalli BPM per zona 0-6 (in ordine)."""
     labels = get_zone_labels()
     if custom_upper_bpm and len(custom_upper_bpm) >= 7:
